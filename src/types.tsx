@@ -2,6 +2,7 @@ import Animated from 'react-native-reanimated';
 
 export type Route = {
   key: string;
+  state?: any;
   icon?: string;
   title?: string;
   accessible?: boolean;
@@ -20,6 +21,7 @@ export type Scene<T extends Route> = {
 
 export type NavigationState<T extends Route> = {
   index: number;
+  key: string;
   routes: T[];
 };
 

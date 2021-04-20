@@ -47,6 +47,11 @@ export type Props<T extends Route> = PagerCommonProps & {
 type ComponentState = {
   enabled: boolean;
   childPanGestureHandlerRefs: React.RefObject<PanGestureHandler>[];
+  childIsSwiping: Animated.Node<Binary>;
+  activeRouteHasChildPager: Animated.Node<Binary>;
+  childPagerRouteKeys: string[];
+  // childCanSwipeRight: Animated.Node<Binary>;
+  // childCanSwipeLeft: Animated.Node<Binary>;
 };
 
 const {
@@ -83,18 +88,16 @@ const {
   timing,
 } = Animated;
 
-/*
-function debug(message: any, value: any) {
-  return block([
-    call([value], ([a]) => {
-      console.log(`Pager - ${message} ${a}`)
-    }),
-    value,
-  ]);
-}
- */
+// function debug(message: any, value: any) {
+//   return block([
+//     call([value], ([a]) => {
+//       console.log(`ParentPager - ${message} ${a}`)
+//     }),
+//     value,
+//   ]);
+// }
 
-const PagerContext = React.createContext({});
+export const PagerContext = React.createContext({});
 
 const TRUE = 1;
 const FALSE = 0;
@@ -124,10 +127,10 @@ const TIMING_CONFIG = {
   easing: Easing.out(Easing.cubic),
 };
 
-export default class Pager<T extends Route> extends React.Component<
+export default class ParentPager<T extends Route> extends React.Component<
   Props<T>,
   ComponentState
-> {
+  > {
   static defaultProps = {
     swipeVelocityImpact: SWIPE_VELOCITY_IMPACT,
     springVelocityScale: SPRING_VELOCITY_SCALE,
@@ -136,14 +139,28 @@ export default class Pager<T extends Route> extends React.Component<
   state = {
     enabled: true,
     childPanGestureHandlerRefs: [] as React.RefObject<PanGestureHandler>[],
+    childPagerRouteKeys: [] as string[],
+    // some defaults in case no child gets registered
+    // childIsSwiping: new Value(FALSE),
+    // childCanSwipeRight: new Value(FALSE),
+    // childCanSwipeLeft: new Value(FALSE),
   };
 
   componentDidMount() {
+    // console.log('ParentPager componentDidMount!!!!!')
     // Register this PanGestureHandler with the parent (if parent exists)
     // in order to coordinate gestures between handlers.
     if (this.context && this.context.addGestureHandlerRef) {
       this.context.addGestureHandlerRef(this.gestureHandlerRef);
     }
+
+    // if (this.checkIfActiveRouteHasChildPagers(this.props.navigationState)) {
+    //   // console.log('YES - active route DOES have child pagers');
+    //   this.activeRouteHasChildPager.setValue(TRUE);
+    // } else {
+    //   console.log('NO - active route DOES NOT have child pagers');
+    //   this.activeRouteHasChildPager.setValue(FALSE);
+    // }
   }
 
   componentDidUpdate(prevProps: Props<T>) {
@@ -156,6 +173,24 @@ export default class Pager<T extends Route> extends React.Component<
       timingConfig,
     } = this.props;
     const { index, routes } = navigationState;
+
+    // console.log(
+    //   'ParentPager componentDidUpdate - index:',
+    //   index,
+    //   'navigationState:',
+    //   navigationState
+    // );
+
+    // if (index !== prevProps.navigationState.index) {
+    //   // not sure if the "if component updates during swipe" is relevant
+    //   if (this.checkIfActiveRouteHasChildPagers(navigationState)) {
+    //     console.log('YES - active route DOES have child pagers');
+    //     this.activeRouteHasChildPager.setValue(TRUE);
+    //   } else {
+    //     console.log('NO - active route DOES NOT have child pagers');
+    //     this.activeRouteHasChildPager.setValue(FALSE);
+    //   }
+    // }
 
     if (
       // Check for index in state to avoid unintended transition if component updates during swipe
@@ -245,6 +280,16 @@ export default class Pager<T extends Route> extends React.Component<
 
   static contextType = PagerContext;
 
+  // PanGestureHandler ref used for coordination with parent handlers
+  private gestureHandlerRef: React.RefObject<
+    PanGestureHandler
+    > = React.createRef();
+
+  private childGestureState = new Value(State.UNDETERMINED);
+  private childCanSwipeRight = new Value(FALSE);
+  private childCanSwipeLeft = new Value(FALSE);
+  private activeRouteHasChildPager = new Value(FALSE);
+
   // Mechanism to add child PanGestureHandler refs in the case that this
   // Pager is a parent to child Pagers. Allows for coordination between handlers
   private providerVal = {
@@ -258,24 +303,82 @@ export default class Pager<T extends Route> extends React.Component<
         }));
       }
     },
+    // registerChild: (isSwiping: any, canSwipeRight: any, canSwipeLeft: any) => {
+    //   console.debug('register child:', isSwiping, canSwipeRight, canSwipeLeft)
+    //
+    //   this.setState({
+    //     childIsSwiping: isSwiping,
+    //     childCanSwipeRight: canSwipeRight,
+    //     childCanSwipeLeft: canSwipeLeft,
+    //   });
+    // },
+    /*
+    registerChildPagerRouteKey: (key: string) => {
+      if (!this.state.childPagerRouteKeys.includes(key)) {
+        console.log('ParentPager - registerChildPagerRouteKey - adding key:', key);
+        this.setState((prevState: ComponentState) => ({
+          childPagerRouteKeys: [
+            ...prevState.childPagerRouteKeys,
+            key,
+          ],
+        }));
+      }
+    },*/
+    setChildCanSwipeLeft: (value: any) => {
+      this.childCanSwipeLeft.setValue(value);
+      // this.activeRouteHasChildPager.setValue(TRUE);
+      // console.log('ParentPager - childCanSwipeLeft.setValue', value)
+    },
+    setChildCanSwipeRight: (value: any) => {
+      this.childCanSwipeRight.setValue(value);
+      // console.log('ParentPager - childCanSwipeRight.setValue', value)
+    },
+    gestureHandlerRef: this.gestureHandlerRef,
+    childGestureState: this.childGestureState,
   };
 
-  // PanGestureHandler ref used for coordination with parent handlers
-  private gestureHandlerRef: React.RefObject<
-    PanGestureHandler
-  > = React.createRef();
 
   // Clock used for tab transition animations
   private clock = new Clock();
 
-  // Current state of the gesture
-  private velocityX = new Value(0);
-  private gestureX = new Value(0);
-  private gestureState = new Value(State.UNDETERMINED);
-  private offsetX = new Value(0);
+  private gestureEventVelocityX = new Value(0);
+  private gestureEventTranslationX = new Value(0);
+  private gestureEventState = new Value(State.UNDETERMINED);
 
   // Tracks current state of gesture handler enabled
   private gesturesEnabled = new Value(1);
+  private gestureEnded = new Value(0);
+  private gestureIgnored = new Value(0);
+
+  // private gestureIgnored = and(
+  //   or(
+  //     eq(this.gestureEventState, State.ACTIVE),
+  //     // eq(this.gestureEventState, State.END),
+  //   ),
+  //   or(
+  //     // only ignore gestures that a child is currently handling
+  //     eq(this.childGestureState, State.BEGAN),
+  //     eq(this.childGestureState, State.ACTIVE),
+  //   ),
+  //   or(
+  //     and(greaterThan(this.gestureEventTranslationX, 0), this.childCanSwipeLeft),
+  //     and(lessThan(this.gestureEventTranslationX, 0), this.childCanSwipeRight),
+  //   )
+  // );
+  // private gestureX = new Value(0);
+  // private velocityX = new Value(0);
+  // private gestureState = new Value(State.UNDETERMINED);
+
+  // private gestureX = cond(or(this.gestureIgnored, this.gestureEnded), 0, this.gestureEventTranslationX);
+  // private velocityX = cond(or(this.gestureIgnored, this.gestureEnded), 0, this.gestureEventVelocityX);
+  private gestureX = cond(or(this.gestureIgnored, this.gestureEnded), 0, this.gestureEventTranslationX);
+  private velocityX = cond(or(this.gestureIgnored, this.gestureEnded), 0, this.gestureEventVelocityX);
+  private gestureState = add(0, this.gestureEventState);
+
+
+  private offsetX = new Value(0);
+
+
 
   // Current progress of the page (translateX value)
   private progress = new Value(
@@ -400,6 +503,44 @@ export default class Pager<T extends Route> extends React.Component<
   // InteractionHandle to handle tasks around animations
   private interactionHandle: number | null = null;
 
+  /*
+  private checkIfActiveRouteHasChildPagers = (
+    navigationState: NavigationState<T>
+  ): boolean => {
+    const { routes, index, key } = navigationState;
+    const { childPagerRouteKeys } = this.state;
+
+
+    if (!childPagerRouteKeys.length) {
+      console.log('checkIfActiveRouteHasChildPagers - no keys to check');
+      return false;
+    }
+
+    console.log('checkIfActiveRouteHasChildPagers - state key:', key ,'looking for:', childPagerRouteKeys);
+    if (childPagerRouteKeys.includes(key)) {
+      console.log(`found key (${key}) in nav state`, childPagerRouteKeys);
+      return true;
+    } else {
+      console.log(`nav key (${key}) does not match`, childPagerRouteKeys);
+    }
+
+    const activeRoute = routes[index];
+    console.log('checkIfActiveRouteHasChildPagers - active key:', activeRoute.key ,'looking for:', childPagerRouteKeys, 'navigationState:', navigationState, 'activeRoute:', activeRoute);
+
+    if (childPagerRouteKeys.includes(activeRoute.key)) {
+      console.log('found activeRoute key in list of child pagers');
+      return true;
+    }
+
+    if (!activeRoute.state) {
+      console.log('active route has no children - no child pagers to find');
+      return false;
+    }
+
+    return this.checkIfActiveRouteHasChildPagers(activeRoute.state)
+  };
+   */
+
   private jumpToIndex = (index: number) => {
     // If the index changed, we need to trigger a tab switch
     this.isSwipeGesture.setValue(FALSE);
@@ -470,16 +611,14 @@ export default class Pager<T extends Route> extends React.Component<
       finished: new Value(FALSE),
     };
 
-    // console.log('Pager - transitionTo called');
+    // console.log('ParentPager - transitionTo', index)
 
     return block([
-      // debug('transitionTo block - position', state.position),
-      // debug('transitionTo block - time', state.time),
-      // debug('transitionTo block - finished', state.finished),
       cond(clockRunning(this.clock), NOOP, [
+        // debug('transitionTo start', state.position),
         // Animation wasn't running before
         // Set the initial values and start the clock
-        // debug('transitionTo - start', state.position),
+        // debug('start animation', index),
         call([state.finished], () => {
           if (this.interactionHandle !== null) {
             // console.log('interaction handle already set??');
@@ -498,18 +637,18 @@ export default class Pager<T extends Route> extends React.Component<
         this.isSwipeGesture,
         // Animate the values with a spring for swipe
         [
-          // debug('transitionTo - isSwipeGesture TRUE', state.position),
+          // debug('transitionTo - isSwipeGesture', state.position),
           cond(
             not(clockRunning(this.clock)),
             I18nManager.isRTL
               ? set(
-                  this.initialVelocityForSpring,
-                  multiply(-1, this.velocityX, this.springVelocityScale)
-                )
+              this.initialVelocityForSpring,
+              multiply(-1, this.velocityX, this.springVelocityScale)
+              )
               : set(
-                  this.initialVelocityForSpring,
-                  multiply(this.velocityX, this.springVelocityScale)
-                )
+              this.initialVelocityForSpring,
+              multiply(this.velocityX, this.springVelocityScale)
+              )
           ),
           spring(
             this.clock,
@@ -519,7 +658,7 @@ export default class Pager<T extends Route> extends React.Component<
         ],
         // Otherwise use a timing animation for faster switching
         [
-          // debug('transitionTo - isSwipeGesture FALSE', state.position),
+          // debug('transitionTo not swipe gesture', state.position),
           timing(
             this.clock,
             { ...state, frameTime },
@@ -528,15 +667,17 @@ export default class Pager<T extends Route> extends React.Component<
         ]
       ),
       cond(not(clockRunning(this.clock)), [
-        // debug('transitionTo - startClock', state.position),
+        // debug('transitionTo start clock', state.position),
         startClock(this.clock)
       ]),
       cond(state.finished, [
-        // debug('transitionTo - finished', state.position),
+        // debug('transitionTO finished', state.position),
         // Reset values
         set(this.isSwipeGesture, FALSE),
-        set(this.gestureX, 0),
-        set(this.velocityX, 0),
+        // set(this.gestureX, 0),
+        // set(this.velocityX, 0),
+        set(this.gestureEventTranslationX, 0),
+        set(this.gestureEventVelocityX, 0),
 
         call([state.finished], () => {
           if (this.interactionHandle !== null) {
@@ -557,27 +698,212 @@ export default class Pager<T extends Route> extends React.Component<
   private handleGestureEvent = event([
     {
       nativeEvent: {
-        translationX: this.gestureX,
-        velocityX: this.velocityX,
-        state: this.gestureState,
+        translationX: this.gestureEventTranslationX,
+        velocityX: this.gestureEventVelocityX,
+        state: this.gestureEventState,
       },
     },
   ]);
 
   // private handleGestureEvent = event([
   //   {
-  //     nativeEvent: ({ translationX, velocityX, state }) => block([
-  //
-  //       set(this.gestureState, state),
-  //       set(this.velocityX, velocityX),
-  //       set(this.gestureX, translationX),
-  //       // debug('EVENT gestureX', this.gestureX),
-  //       // debug('EVENT velocityX', this.velocityX),
-  //       // debug('EVENT gestureState', this.gestureState),
+  //     nativeEvent: ({translationX, velocityX, state}) => block([
+  //       set(this.gestureEventVelocityX, velocityX),
+  //       set(this.gestureEventState, state),
+  //       set(this.gestureEventTranslationX, translationX),
+  //       debug('EVENT gestureEventState', this.gestureEventState),
+  //       debug('EVENT gestureEventTranslationX', this.gestureEventTranslationX),
+  //       debug('EVENT gestureEventVelocityX', this.gestureEventVelocityX),
+  //       debug('EVENT childGestureState', this.childGestureState),
+  //       debug('EVENT childCanSwipeLeft', this.childCanSwipeLeft),
+  //       debug('EVENT childCanSwipeRight', this.childCanSwipeRight),
   //     ])
   //   },
   // ]);
 
+  /*
+  private handleGestureEvent2 = event([
+    {
+      nativeEvent: ({ translationX, velocityX, state }) => block([
+
+        set(this.gestureEventState, state),
+        set(this.gestureEventTranslationX, translationX),
+        set(this.gestureEventVelocityX, velocityX),
+
+        debug('EVENT gestureEventState', this.gestureEventState),
+        debug('EVENT gestureEventTranslationX', this.gestureEventTranslationX),
+        debug('EVENT gestureEventVelocityX', this.gestureEventVelocityX),
+        debug('EVENT gestureIgnored', this.gestureIgnored),
+        debug('EVENT gestureEnded', this.gestureEnded),
+        debug('EVENT activeRouteHasChildPager', this.activeRouteHasChildPager),
+        debug('EVENT childGestureState', this.childGestureState),
+        // debug('EVENT childCanSwipeRight', this.childCanSwipeRight),
+        // debug('EVENT childCanSwipeLeft', this.childCanSwipeLeft),
+
+        cond(
+          eq(this.gestureEventState, State.BEGAN),
+          block([
+            debug('BEGAN - NEW GESTURE - RESETTING', this.gestureEventState),
+            set(this.gestureIgnored, FALSE),
+            set(this.gestureEnded, FALSE),
+            // set(this.gestureX, 0),
+            // set(this.velocityX, 0),
+          ])
+        ),
+
+        // ported
+        cond(
+          and(
+            eq(this.gestureEventState, State.ACTIVE),
+            not(this.gestureIgnored),
+            or(
+              // only ignore gestures that a child is currently handling
+              eq(this.childGestureState, State.BEGAN),
+              eq(this.childGestureState, State.ACTIVE),
+            )
+          ),
+          block([
+            cond(
+              and(greaterThan(this.gestureEventTranslationX, 0), this.childCanSwipeLeft),
+              block([
+                debug('ignore left swipe gesture - child is swiping left', this.gestureEventTranslationX),
+                set(this.gestureIgnored, TRUE),
+              ])
+            ),
+            cond(
+              and(lessThan(translationX, 0), this.childCanSwipeRight),
+              block([
+                debug('ignore right swipe gesture - child is swiping right', this.gestureEventTranslationX),
+                set(this.gestureIgnored, TRUE),
+              ])
+            )
+          ])
+        ),
+
+        // ported
+        cond(
+          // also filter out weird END repeat events on normal taps
+          or(this.gestureIgnored, this.gestureEnded),
+          block([
+            set(this.velocityX, 0),
+            set(this.gestureX, 0),
+          ]),
+          block([
+            set(this.velocityX, velocityX),
+            set(this.gestureX, translationX),
+          ]),
+        ),
+
+        // ported
+        set(this.gestureState, state),
+
+        // perform this after above logic so that we still process first END event
+        // but not the subsequent ghost ones
+        cond(
+          eq(this.gestureEventState, State.END),
+          block([
+            debug('END - GESTURE CLOSED RESETTING', this.gestureEventState),
+            set(this.gestureIgnored, FALSE),
+            set(this.gestureEnded, TRUE),
+            // set(this.gestureX, 0),
+            // set(this.velocityX, 0),
+          ])
+        ),
+
+        debug('EXIT velocityX', this.velocityX),
+        debug('EXIT gestureX', this.gestureX),
+        debug('EXIT gestureState', this.gestureState),
+
+        // cond(
+        //   or(
+        //     and(greaterThan(translationX, 0), this.childCanSwipeLeft),
+        //     ,
+        //   ),
+        //   set(this.gestureIgnored, TRUE)
+        // ),
+
+        // cond(or(
+        //   eq(state, State.UNDETERMINED),
+        //   eq(state, State.BEGAN),
+        //   eq(state, State.END),
+        //   eq(state, State.FAILED),
+        //   eq(state, State.CANCELLED),
+        // ), block([
+        //   debug('state is no longer active, resetting', this.gestureIgnored),
+        //   set(this.gestureIgnored, 0)
+        // ])),
+        //
+        // cond(
+        //   or(
+        //     and(greaterThan(translationX, 0), this.childCanSwipeLeft),
+        //     and(lessThan(translationX, 0), this.childCanSwipeRight),
+        //   ),
+        //   set(this.gestureIgnored, TRUE)
+        // ),
+        // debug('this.gestureIgnored', this.gestureIgnored),
+        //
+        // cond(
+        //   this.gestureIgnored,
+        //   block([
+        //     set(this.isSwipeGesture, FALSE),
+        //     set(this.isSwiping, FALSE),
+        //     set(this.gestureState, State.CANCELLED)
+        //   ]),
+        //   block([
+        //     set(this.gestureX, translationX),
+        //     set(this.velocityX, velocityX),
+        //     set(this.gestureState, state)
+        //   ])
+        // )
+      ])
+    }
+  ]);
+
+
+        // debug('native event gestureX:', this.gestureX),
+        // debug('native event translationX:', translationX),
+        // debug('native event childCanSwipeRight:', this.childCanSwipeRight),
+        // debug('native event childCanSwipeLeft:', this.childCanSwipeLeft),
+        // cond(lessThan(translationX,0), debug('is swiping right?', this.gestureX)),
+        // cond(greaterThan(translationX,0), debug('is swiping left?', this.gestureX)),
+        // cond(
+        //   and(greaterThan(translationX,0), not(this.childCanSwipeLeft)),
+        //   block([
+        //     debug('allow swipe left', this.gestureX),
+        //     set(this.gestureX, translationX),
+        //     set(this.velocityX, velocityX)
+        //   ]),
+        //   cond(
+        //     and(lessThan(translationX,0), not(this.childCanSwipeRight)),
+        //     block([
+        //       debug('allow swipe right', this.gestureX),
+        //       set(this.gestureX, translationX),
+        //       set(this.velocityX, velocityX)
+        //     ]),
+        //     block([
+        //       debug('KILL GESTURE dont allow swipe right', this.gestureX),
+        //       set(this.gesturesEnabled, FALSE)
+        //     ])
+        //   ),
+          // block([
+          //   debug('dont allow swipe left', this.gestureX),
+          //   set(this.gestureX, 0),
+          //   set(this.velocityX, 0)
+          // ])
+        // ),
+
+        // set(this.gestureX, translationX),
+        // set(this.gestureState, state),
+      // ])
+
+      // nativeEvent: {
+      //   translationX: this.gestureX,
+      //   velocityX: this.velocityX,
+      //   state: this.gestureState,
+      // },
+    // },
+  // ]);
+*/
   private extrapolatedPosition = add(
     this.gestureX,
     multiply(this.velocityX, this.swipeVelocityImpact)
@@ -605,14 +931,99 @@ export default class Pager<T extends Route> extends React.Component<
           and(eq(this.index, 0), greaterThan(this.gestureX, 0))
         )
       ),
-      [
-        // debug('maybeCancel IF- cancel gesture', this.gesturesEnabled),
-        set(this.gesturesEnabled, 0)
-      ]
+      set(this.gesturesEnabled, 0)
     ),
   ]);
 
+
   private translateX = block([
+    onChange(
+      this.gestureEventState,
+      block([
+        cond(
+          eq(this.gestureEventState, State.BEGAN),
+          block([
+            // debug(
+            //   'gestureEventState changed to began. resetting',
+            //   this.gestureEventState
+            // ),
+            set(this.gestureEnded, FALSE),
+            set(this.gestureIgnored, FALSE),
+          ])
+        ),
+        cond(
+          and(
+            eq(this.gestureEventState, State.ACTIVE),
+            or(
+              // only ignore gestures that a child is currently handling
+              eq(this.childGestureState, State.BEGAN),
+              eq(this.childGestureState, State.ACTIVE),
+            )
+          ),
+          block([
+            // debug(
+            //   'gestureEventState changed to active w/ active child',
+            //   this.gestureEventState
+            // ),
+            cond(
+              or(
+                and(greaterThan(this.gestureEventTranslationX, 0), this.childCanSwipeLeft),
+                and(lessThan(this.gestureEventTranslationX, 0), this.childCanSwipeRight),
+                // on android, the first "active" frame of gesture always has 0 translation, so also check velocity for direction
+                and(greaterThan(this.gestureEventVelocityX, 0), this.childCanSwipeLeft),
+                and(lessThan(this.gestureEventVelocityX, 0), this.childCanSwipeRight),
+              ),
+              [
+                // debug('setting gesture ignored', this.gestureEventTranslationX),
+                set(this.gestureIgnored, TRUE),
+              ]
+            )
+          ])
+        ),
+        // cond(
+        //   eq(this.gestureEventState, State.END),
+        //   block([
+        //     debug(
+        //       'gestureEventState changed to end. resetting',
+        //       this.gestureEventState
+        //     ),
+        //     set(this.gestureEnded, TRUE),
+        //   ])
+        // ),
+      ])
+    ),
+    // onChange(
+    //   this.childCanSwipeLeft,
+    //   debug('childCanSwipeLeft changed', this.childCanSwipeLeft)
+    // ),
+    // onChange(
+    //   this.childCanSwipeRight,
+    //   debug('childCanSwipeRight changed', this.childCanSwipeRight)
+    // ),
+    // onChange(
+    //   this.childGestureState,
+    //   debug('childGestureState changed', this.childGestureState)
+    // ),
+    // onChange(
+    //   this.gestureX,
+    //   debug('gestureX', this.gestureX)
+    // ),
+    // onChange(
+    //   this.gestureX,
+    //   debug('gestureX changed', this.gestureX)
+    // ),
+    // onChange(
+    //   this.velocityX,
+    //   debug('velocityX changed', this.velocityX)
+    // ),
+    // onChange(
+    //   this.gestureState,
+    //   debug('gestureState changed', this.gestureState)
+    // ),
+    // onChange(
+    //   this.gestureIgnored,
+    //   debug('gesture ignored changed', this.gestureIgnored)
+    // ),
     onChange(
       this.gesturesEnabled,
       cond(
@@ -623,6 +1034,7 @@ export default class Pager<T extends Route> extends React.Component<
     onChange(
       this.index,
       call([this.index], ([value]) => {
+        // console.log('ParentPager onChange(this.index)', value);
         this.currentIndexValue = value;
         // Without this check, the pager can go to an infinite update <-> animate loop for sync updates
         if (value !== this.props.navigationState.index) {
@@ -663,10 +1075,18 @@ export default class Pager<T extends Route> extends React.Component<
       // Without `onChange`, this will fire even if the value didn't change
       // We don't want to call the listeners if the value didn't change
       [
-        cond(not(this.isSwiping), set(this.gesturesEnabled, 1)),
+        cond(
+          not(this.isSwiping),
+          block([
+            // debug('resetting', this.gestureIgnored),
+            set(this.gesturesEnabled, 1),
+            // set(this.gestureIgnored, 0),
+          ])
+        ),
         call(
           [this.isSwiping, this.indexAtSwipeEnd, this.index],
           ([isSwiping, indexAtSwipeEnd, currentIndex]: readonly number[]) => {
+            // console.log('ParentPager - isSwiping changed - callback')
             const {
               keyboardDismissMode,
               onSwipeStart,
@@ -721,7 +1141,8 @@ export default class Pager<T extends Route> extends React.Component<
       cond(neq(this.nextIndex, UNSET), [
         // Stop any running animations
         cond(clockRunning(this.clock), stopClock(this.clock)),
-        set(this.gestureX, 0),
+        // set(this.gestureX, 0),
+        set(this.gestureEventTranslationX, 0),
         // Update the index to trigger the transition
         set(this.index, this.nextIndex),
         set(this.nextIndex, UNSET),
@@ -730,8 +1151,7 @@ export default class Pager<T extends Route> extends React.Component<
     cond(
       eq(this.gestureState, State.ACTIVE),
       [
-        // debug('tranlateX - gestureState now active', this.progress),
-        this.maybeCancel,
+        // this.maybeCancel,
         cond(this.isSwiping, NOOP, [
           // We weren't dragging before, set it to true
           set(this.isSwiping, TRUE),
@@ -750,7 +1170,6 @@ export default class Pager<T extends Route> extends React.Component<
         stopClock(this.clock),
       ],
       [
-        // debug('tranlateX - gestureState not active', this.progress),
         set(this.isSwiping, FALSE),
         set(this.indexAtSwipeEnd, this.index),
         this.transitionTo(
@@ -791,6 +1210,31 @@ export default class Pager<T extends Route> extends React.Component<
         ),
       ]
     ),
+    onChange(
+      this.gestureEventState,
+      block([
+        // cond(
+        //   eq(this.gestureEventState, State.BEGAN),
+        //   block([
+        //     debug(
+        //       'gestureEventState changed to began. resetting',
+        //       this.gestureEventState
+        //     ),
+        //     set(this.gestureEnded, FALSE),
+        //   ])
+        // ),
+        cond(
+          eq(this.gestureEventState, State.END),
+          block([
+            // debug(
+            //   'gestureEventState changed to end. resetting',
+            //   this.gestureEventState
+            // ),
+            set(this.gestureEnded, TRUE),
+          ])
+        ),
+      ])
+    ),
     this.progress,
   ]);
 
@@ -798,7 +1242,7 @@ export default class Pager<T extends Route> extends React.Component<
     (
       layoutWidth: Animated.Node<number>,
       routesLength: Animated.Node<number>,
-      translateX: Animated.Node<number>
+      translateX: Animated.Node<number>,
     ) =>
       multiply(
         // Make sure that the translation doesn't exceed the bounds to prevent overscrolling
@@ -838,7 +1282,7 @@ export default class Pager<T extends Route> extends React.Component<
         <PanGestureHandler
           ref={this.gestureHandlerRef}
           simultaneousHandlers={this.state.childPanGestureHandlerRefs}
-          waitFor={this.state.childPanGestureHandlerRefs}
+          // waitFor={this.state.childPanGestureHandlerRefs}
           enabled={layout.width !== 0 && swipeEnabled && this.state.enabled}
           onGestureEvent={this.handleGestureEvent}
           onHandlerStateChange={this.handleGestureEvent}
@@ -852,9 +1296,9 @@ export default class Pager<T extends Route> extends React.Component<
               styles.container,
               layout.width
                 ? {
-                    width: layout.width * navigationState.routes.length,
-                    transform: [{ translateX }] as any,
-                  }
+                  width: layout.width * navigationState.routes.length,
+                  transform: [{ translateX }] as any,
+                }
                 : null,
             ]}
           >
